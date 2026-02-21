@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-02-21
+
+### Added
+- **HTML email template** — OTP emails are now sent as `multipart/alternative` (HTML + plain-text). The HTML version uses a minimal, clean layout with a styled OTP code block, a conditional magic-link button, and inline CSS for broad email-client compatibility.
+- `templates/email-otp.php` — PHP template file rendered via `ob_start()` / `include`. Receives scoped variables (`$site_name`, `$display_name`, `$otp`, `$magic_url`, `$expiry_minutes`, `$login_method`) and conditionally shows the OTP code block and/or the magic-link button based on the active login method.
+- `otp_login_render_email()` — New helper in `includes/otp.php` that builds and returns `['subject', 'html', 'text']`. All three send paths (initial request, resend, test email) use the same render function — no duplication.
+
+### Changed
+- `otp_login_send_otp_email()` — Now calls `otp_login_render_email()`, attaches the plain-text body as `AltBody` via a `phpmailer_init` action, and sends with `Content-Type: text/html`. The action is added and immediately removed around the `wp_mail()` call to prevent leaking into other mail sends.
+- Email Template admin section — Description updated to explain the HTML template is built-in and the body field is now the plain-text fallback. "Body" field label renamed to "Plain-text fallback".
+
 ## [1.6.0] - 2026-02-21
 
 ### Added

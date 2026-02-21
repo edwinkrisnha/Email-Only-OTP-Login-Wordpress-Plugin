@@ -15,7 +15,7 @@ A WordPress plugin that replaces the default password-based login with a secure 
 - **XML-RPC protection** — Optionally disable XML-RPC, which requires password auth and bypasses OTP.
 - **REST API protection** — Block Authorization-header-based auth (Basic Auth, Application Passwords) when password login is disabled.
 - **Login attempt log** — Admin table showing every login event: timestamp, identifier, IP, event type, and resolved user.
-- **Customizable email template** — Edit the subject and body with placeholder support.
+- **HTML email template** — Emails are sent as styled HTML (with a plain-text fallback) using a built-in minimal template. The OTP appears in a prominent code block; magic-link login renders a clickable button.
 - **Test email tool** — Send a preview OTP email from the admin panel to verify your mail configuration.
 
 ## Requirements
@@ -88,7 +88,9 @@ Enter one domain per line (e.g. `example.com`). Leave blank to allow all domains
 
 ### Email Template
 
-Customize the OTP email subject and body. Available placeholders:
+OTP emails are sent as **HTML** using the built-in styled template (`templates/email-otp.php`). The HTML version automatically shows or hides the OTP code block and magic-link button based on your Login Method setting.
+
+The **Subject** and **Plain-text fallback** fields are customizable in Settings → OTP Login. The plain-text fallback is used by email clients that cannot render HTML. Available placeholders for both fields:
 
 | Placeholder | Value |
 |---|---|
@@ -98,7 +100,7 @@ Customize the OTP email subject and body. Available placeholders:
 | `{magic_link}` | The one-click login URL (empty when Login Method is "OTP code only") |
 | `{expiry_minutes}` | Code/link expiry in minutes |
 
-> **Tip:** When using magic link mode, add `{magic_link}` to your email body template. Example body line: `Click here to log in: {magic_link}`
+> **Tip:** Include `{magic_link}` in the plain-text fallback when Login Method is "Magic link" or "Both".
 
 ## Login Methods
 
@@ -117,9 +119,11 @@ email-only-otp-login/
 ├── email-only-otp-login.php   # Plugin bootstrap
 ├── includes/
 │   ├── settings.php           # Admin settings, field renderers
-│   ├── otp.php                # Login flow, OTP helpers, render forms
+│   ├── otp.php                # Login flow, OTP helpers, email, render forms
 │   ├── security.php           # Rate limiting, XML-RPC, REST API protection
 │   └── log.php                # Login attempt log (DB table, admin page)
+├── templates/
+│   └── email-otp.php          # HTML email template (OTP code block + magic link)
 ├── CHANGELOG.md
 ├── LICENSE
 └── README.md

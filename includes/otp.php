@@ -357,7 +357,15 @@ function otp_login_magic_url( $token ) {
 // 8. EMAIL
 // ─────────────────────────────────────────────────────────────
 
-function otp_login_send_otp_email( $user, $otp, $magic_url = '' ) {
+/**
+ * Build the email parts (subject, HTML body, plain-text fallback) for an OTP email.
+ *
+ * @param object $user      User object with user_email and display_name.
+ * @param string $otp       One-time code. Empty string when method is 'magic'.
+ * @param string $magic_url Magic-link URL. Empty string when method is 'otp'.
+ * @return array { subject: string, html: string, text: string }
+ */
+function otp_login_render_email( $user, $otp, $magic_url = '' ) {
     $s              = otp_login_settings();
     $site_name      = get_bloginfo( 'name' );
     $expiry_minutes = (int) $s['otp_expiry_minutes'];
@@ -371,9 +379,34 @@ function otp_login_send_otp_email( $user, $otp, $magic_url = '' ) {
     ];
 
     $subject = str_replace( array_keys( $placeholders ), array_values( $placeholders ), $s['email_subject'] );
-    $body    = str_replace( array_keys( $placeholders ), array_values( $placeholders ), $s['email_body'] );
+    $text    = str_replace( array_keys( $placeholders ), array_values( $placeholders ), $s['email_body'] );
 
-    return wp_mail( $user->user_email, $subject, $body, [ 'Content-Type: text/plain; charset=UTF-8' ] );
+    // Render the HTML template — expose only the variables the template needs.
+    $display_name = $user->display_name;
+    $login_method = $s['login_method'];
+    $template     = plugin_dir_path( OTP_LOGIN_PLUGIN_FILE ) . 'templates/email-otp.php';
+
+    ob_start();
+    include $template;
+    $html = ob_get_clean();
+
+    return compact( 'subject', 'html', 'text' );
+}
+
+function otp_login_send_otp_email( $user, $otp, $magic_url = '' ) {
+    $parts    = otp_login_render_email( $user, $otp, $magic_url );
+    $alt_body = $parts['text'];
+
+    // Attach the plain-text alternative body via PHPMailer before wp_mail() sends.
+    $set_alt = static function ( $phpmailer ) use ( $alt_body ) {
+        $phpmailer->AltBody = $alt_body;
+    };
+
+    add_action( 'phpmailer_init', $set_alt );
+    $result = wp_mail( $user->user_email, $parts['subject'], $parts['html'], [ 'Content-Type: text/html; charset=UTF-8' ] );
+    remove_action( 'phpmailer_init', $set_alt );
+
+    return $result;
 }
 
 // ─────────────────────────────────────────────────────────────

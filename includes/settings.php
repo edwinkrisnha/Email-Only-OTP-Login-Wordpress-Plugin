@@ -128,17 +128,19 @@ function otp_login_register_settings() {
         __( 'Email Template', 'otp-login' ),
         function () {
             echo '<p>'
-                . esc_html__( 'Customize the OTP email. Available placeholders: ', 'otp-login' )
+                . esc_html__( 'OTP emails are sent as HTML using the built-in styled template. The plain-text field below is used as a fallback for email clients that cannot render HTML.', 'otp-login' )
+                . '</p><p>'
+                . esc_html__( 'Available placeholders: ', 'otp-login' )
                 . '<code>{site_name}</code>, <code>{display_name}</code>, <code>{otp}</code>, <code>{expiry_minutes}</code>, <code>{magic_link}</code>'
                 . '</p><p>'
-                . esc_html__( 'Add {magic_link} to your body template when Login Method is set to "Magic link" or "Both".', 'otp-login' )
+                . esc_html__( 'Include {magic_link} in the plain-text fallback when Login Method is set to "Magic link" or "Both".', 'otp-login' )
                 . '</p>';
         },
         'otp-login'
     );
 
-    add_settings_field( 'email_subject', __( 'Subject', 'otp-login' ), 'otp_login_field_email_subject', 'otp-login', 'otp_login_section_email' );
-    add_settings_field( 'email_body',    __( 'Body', 'otp-login' ),    'otp_login_field_email_body',    'otp-login', 'otp_login_section_email' );
+    add_settings_field( 'email_subject', __( 'Subject', 'otp-login' ),              'otp_login_field_email_subject', 'otp-login', 'otp_login_section_email' );
+    add_settings_field( 'email_body',    __( 'Plain-text fallback', 'otp-login' ),   'otp_login_field_email_body',    'otp-login', 'otp_login_section_email' );
 
     // ── Section: Log ──────────────────────────────────────────
     add_settings_section(
