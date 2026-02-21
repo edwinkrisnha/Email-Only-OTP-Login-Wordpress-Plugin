@@ -1,5 +1,7 @@
 # Email Only OTP Login
 
+[GitHub](https://github.com/edwinkrisnha/Email-Only-OTP-Login-Wordpress-Plugin)
+
 A WordPress plugin that replaces the default password-based login with a secure email OTP (One-Time Password) flow.
 
 ## Features
