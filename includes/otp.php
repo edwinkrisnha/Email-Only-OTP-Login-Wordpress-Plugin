@@ -38,6 +38,11 @@ function otp_login_handle_page() {
 // ─────────────────────────────────────────────────────────────
 
 function otp_login_request_otp() {
+    if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( wp_unslash( $_POST['_wpnonce'] ), 'otp_login_request' ) ) {
+        otp_login_render_username_form( __( 'Security check failed. Please try again.', 'otp-login' ) );
+        exit;
+    }
+
     $s          = otp_login_settings();
     $email_only = ! empty( $s['email_only_login'] );
     $method     = $s['login_method']; // 'otp', 'magic', 'both'
@@ -124,6 +129,11 @@ function otp_login_request_otp() {
 // ─────────────────────────────────────────────────────────────
 
 function otp_login_verify_otp() {
+    if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( wp_unslash( $_POST['_wpnonce'] ), 'otp_login_verify' ) ) {
+        otp_login_render_username_form( __( 'Security check failed. Please start over.', 'otp-login' ) );
+        exit;
+    }
+
     $submitted_otp = isset( $_POST['otp_code'] )  ? sanitize_text_field( wp_unslash( $_POST['otp_code'] ) )  : '';
     $token         = isset( $_POST['otp_token'] ) ? sanitize_text_field( wp_unslash( $_POST['otp_token'] ) ) : '';
 
@@ -166,6 +176,11 @@ function otp_login_verify_otp() {
 // ─────────────────────────────────────────────────────────────
 
 function otp_login_resend_otp() {
+    if ( ! isset( $_POST['_wpnonce_resend'] ) || ! wp_verify_nonce( wp_unslash( $_POST['_wpnonce_resend'] ), 'otp_login_resend' ) ) {
+        otp_login_render_username_form( __( 'Security check failed. Please start over.', 'otp-login' ) );
+        exit;
+    }
+
     $token = isset( $_POST['otp_token'] ) ? sanitize_text_field( wp_unslash( $_POST['otp_token'] ) ) : '';
 
     if ( empty( $token ) ) {
@@ -448,6 +463,7 @@ function otp_login_render_username_form( $error = '' ) {
     login_header( __( 'Log In', 'otp-login' ) );
     ?>
     <form name="loginform" id="loginform" action="<?php echo esc_url( wp_login_url() ); ?>" method="post">
+        <?php wp_nonce_field( 'otp_login_request' ); ?>
         <?php if ( $error ) : ?>
             <div id="login_error" class="notice notice-error">
                 <strong><?php echo esc_html( $error ); ?></strong>
@@ -499,6 +515,7 @@ function otp_login_render_otp_form( $token, $error = '', $message = '' ) {
     <?php endif; ?>
 
     <form name="otpform" id="otpform" action="<?php echo esc_url( wp_login_url() ); ?>" method="post">
+        <?php wp_nonce_field( 'otp_login_verify' ); ?>
         <?php if ( $error ) : ?>
             <div id="login_error" class="notice notice-error">
                 <strong><?php echo esc_html( $error ); ?></strong>
@@ -522,6 +539,7 @@ function otp_login_render_otp_form( $token, $error = '', $message = '' ) {
 
     <?php if ( $show_otp ) : ?>
     <form id="resendform" action="<?php echo esc_url( wp_login_url() ); ?>" method="post" style="text-align:center; margin-top:1em;">
+        <?php wp_nonce_field( 'otp_login_resend', '_wpnonce_resend' ); ?>
         <input type="hidden" name="otp_token" value="<?php echo esc_attr( $token ); ?>" />
         <button type="submit" name="otp_login_resend" id="otp-resend-btn" class="button button-secondary" disabled>
             <?php
