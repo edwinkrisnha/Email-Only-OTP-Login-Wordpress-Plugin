@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `otp_login_send_otp_email()` — Now calls `otp_login_render_email()`, attaches the plain-text body as `AltBody` via a `phpmailer_init` action, and sends with `Content-Type: text/html`. The action is added and immediately removed around the `wp_mail()` call to prevent leaking into other mail sends.
 - Email Template admin section — Description updated to explain the HTML template is built-in and the body field is now the plain-text fallback. "Body" field label renamed to "Plain-text fallback".
+- `otp_login_render_email()` — Template path now resolved via `locate_template()` so themes can override the HTML template by placing a file at `email-only-otp-login/email-otp.php` inside the active theme directory.
+- `otp_login_render_email()` — Rendered HTML is passed through the `otp_login_email_html` filter before use, allowing developers to replace or post-process the email body in code.
 
 ## [1.6.0] - 2026-02-21
 

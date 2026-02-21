@@ -384,11 +384,25 @@ function otp_login_render_email( $user, $otp, $magic_url = '' ) {
     // Render the HTML template — expose only the variables the template needs.
     $display_name = $user->display_name;
     $login_method = $s['login_method'];
-    $template     = plugin_dir_path( OTP_LOGIN_PLUGIN_FILE ) . 'templates/email-otp.php';
+
+    // Theme override: drop email-only-otp-login/email-otp.php into your theme to replace the built-in template.
+    $template = locate_template( 'email-only-otp-login/email-otp.php' )
+        ?: plugin_dir_path( OTP_LOGIN_PLUGIN_FILE ) . 'templates/email-otp.php';
 
     ob_start();
     include $template;
     $html = ob_get_clean();
+
+    /**
+     * Filter the HTML body of the OTP email.
+     *
+     * @param string $html        Rendered HTML string.
+     * @param object $user        User object (user_email, display_name).
+     * @param string $otp         One-time code. Empty string when method is 'magic'.
+     * @param string $magic_url   Magic-link URL. Empty string when method is 'otp'.
+     * @param array  $s           Plugin settings array.
+     */
+    $html = apply_filters( 'otp_login_email_html', $html, $user, $otp, $magic_url, $s );
 
     return compact( 'subject', 'html', 'text' );
 }

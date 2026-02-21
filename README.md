@@ -94,6 +94,34 @@ OTP emails are sent as **HTML** using the built-in styled template (`templates/e
 
 The **Subject** and **Plain-text fallback** fields are customizable in Settings → OTP Login. The plain-text fallback is used by email clients that cannot render HTML. Available placeholders for both fields:
 
+#### Customizing the HTML template
+
+**Theme override** — Copy the built-in template into your theme and edit it freely. Plugin updates will never overwrite a theme file:
+
+```
+wp-content/themes/your-theme/email-only-otp-login/email-otp.php
+```
+
+The following PHP variables are available inside the template:
+
+| Variable | Type | Description |
+|---|---|---|
+| `$site_name` | string | WordPress site name |
+| `$display_name` | string | User's display name |
+| `$otp` | string | One-time code (empty string when method is `magic`) |
+| `$magic_url` | string | Magic-link URL (empty string when method is `otp`) |
+| `$expiry_minutes` | int | Expiry in minutes |
+| `$login_method` | string | `otp`, `magic`, or `both` |
+
+**Filter hook** — Replace or post-process the HTML body entirely in code (e.g. in `functions.php` or a mu-plugin):
+
+```php
+add_filter( 'otp_login_email_html', function ( $html, $user, $otp, $magic_url, $s ) {
+    // Return your own HTML string.
+    return $html;
+}, 10, 5 );
+```
+
 | Placeholder | Value |
 |---|---|
 | `{site_name}` | Your WordPress site name |
