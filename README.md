@@ -5,6 +5,8 @@ A WordPress plugin that replaces the default password-based login with a secure 
 ## Features
 
 - **OTP login flow** — Users enter their username or email, receive a time-limited numeric code via email, then enter the code to log in.
+- **Magic link login** — Optionally send a one-click login URL instead of (or alongside) a numeric code.
+- **Resend cooldown** — A "Resend code" button with a configurable cooldown prevents email spam.
 - **Email-only mode** — Optionally restrict the login field to email addresses only (no usernames).
 - **Block password login** — Disable password-based authentication entirely, forcing OTP-only login.
 - **Domain allow-list** — Restrict login and registration to specific email domains.
@@ -36,9 +38,11 @@ Navigate to **Settings → OTP Login** in the WordPress admin.
 | Setting | Default | Description |
 |---|---|---|
 | OTP Length | 6 | Number of digits in the one-time code (4–10). |
-| OTP Expiry | 10 min | How long a code remains valid (1–60 min). |
+| OTP Expiry | 10 min | How long a code or magic link remains valid (1–60 min). |
 | Block Password Login | On | Disables password-based authentication. Uncheck for WP-CLI or admin recovery. |
 | Email-Only Login | Off | When on, the login field only accepts email addresses. |
+| Login Method | OTP code only | Controls what is sent in the email: OTP code, magic link, or both. |
+| Resend Cooldown | 60 s | Seconds a user must wait before using the Resend button (30–300). |
 
 ### Security
 
@@ -61,8 +65,21 @@ Customize the OTP email subject and body. Available placeholders:
 |---|---|
 | `{site_name}` | Your WordPress site name |
 | `{display_name}` | The user's display name |
-| `{otp}` | The one-time code |
-| `{expiry_minutes}` | Code expiry in minutes |
+| `{otp}` | The one-time code (empty when Login Method is "Magic link only") |
+| `{magic_link}` | The one-click login URL (empty when Login Method is "OTP code only") |
+| `{expiry_minutes}` | Code/link expiry in minutes |
+
+> **Tip:** When using magic link mode, add `{magic_link}` to your email body template. Example body line: `Click here to log in: {magic_link}`
+
+## Login Methods
+
+| Method | Behavior |
+|---|---|
+| OTP code only | User enters a numeric code on the login page (default). |
+| Magic link only | User clicks a one-click URL in the email — no code entry needed. |
+| Both | Email contains both the code and the link; user can use either. |
+
+Magic links are single-use and expire after the same duration as OTP codes.
 
 ## File Structure
 
@@ -82,8 +99,10 @@ email-only-otp-login/
 
 - OTP codes are hashed with `wp_hash_password()` before storage.
 - Tokens are stored as WordPress transients and deleted immediately after use or expiry.
+- Magic links are single-use — the token is consumed on first click.
 - User enumeration is prevented — invalid usernames, blocked domains, and non-existent accounts all produce the same generic response.
 - Rate limiting counters are stored as transients, keyed by a hash of the client IP.
+- Resend cooldowns are enforced server-side per user, independent of the client-side countdown.
 
 ## License
 

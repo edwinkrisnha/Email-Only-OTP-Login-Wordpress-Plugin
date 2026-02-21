@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-02-21
+
+### Added
+- **Resend cooldown** — A "Resend code" button is now shown on the OTP form. It is disabled for a configurable cooldown period (default 60s) with a live JavaScript countdown. The cooldown is also enforced server-side per user. Configurable via Settings → General → Resend Cooldown.
+- **Magic link login** — New "Login Method" setting with three options: OTP code only (default), Magic link only, or Both. When magic links are enabled, a secure single-use login URL is generated and included in the email via the `{magic_link}` placeholder. The link is handled via `?action=otp_magic` on the WordPress login page.
+- `{magic_link}` placeholder now available in the email body template.
+- `otp_login_complete_login()` helper extracted to share login logic between OTP verify and magic link flows.
+
+### Changed
+- `otp_login_render_otp_sent_message()` now accepts a `$method` parameter and adjusts its copy for magic link and both modes.
+- `otp_login_render_otp_form()` now accepts a `$message` parameter for success notices (e.g. "A new code has been sent").
+- `otp_login_send_otp_email()` now accepts an optional `$magic_url` parameter.
+- Test email in the admin panel sends a placeholder magic URL when magic link mode is active, so the template renders correctly.
+- Login method dropdown and resend cooldown field added to the General settings section.
+
 ## [1.4.0] - 2026-02-21
 
 ### Added

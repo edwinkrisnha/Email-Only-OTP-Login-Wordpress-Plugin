@@ -10,17 +10,19 @@ defined( 'ABSPATH' ) || exit;
  */
 function otp_login_settings() {
     $defaults = [
-        'otp_length'         => 6,
-        'otp_expiry_minutes' => 10,
-        'allowed_domains'    => "edwin.com\newin123.com",
-        'block_passwords'    => 1,
-        'email_only_login'   => 0,
-        'otp_max_attempts'   => 3,
-        'otp_rate_limit'     => 5,
-        'otp_rate_window'    => 15,
-        'disable_xmlrpc'     => 1,
-        'email_subject'      => '[{site_name}] Your one-time login code',
-        'email_body'         => "Hi {display_name},\n\nYour one-time login code is:\n\n    {otp}\n\nThis code will expire in {expiry_minutes} minutes.\n\nIf you did not request this code, you can safely ignore this email.\n\n— {site_name}",
+        'otp_length'          => 6,
+        'otp_expiry_minutes'  => 10,
+        'allowed_domains'     => "edwin.com\newin123.com",
+        'block_passwords'     => 1,
+        'email_only_login'    => 0,
+        'login_method'        => 'otp',
+        'otp_resend_cooldown' => 60,
+        'otp_max_attempts'    => 3,
+        'otp_rate_limit'      => 5,
+        'otp_rate_window'     => 15,
+        'disable_xmlrpc'      => 1,
+        'email_subject'       => '[{site_name}] Your one-time login code',
+        'email_body'          => "Hi {display_name},\n\nYour one-time login code is:\n\n    {otp}\n\nThis code will expire in {expiry_minutes} minutes.\n\nIf you did not request this code, you can safely ignore this email.\n\n— {site_name}",
     ];
 
     $saved = get_option( 'otp_login_settings', [] );
@@ -85,10 +87,12 @@ function otp_login_register_settings() {
     // ── Section: General ──────────────────────────────────────
     add_settings_section( 'otp_login_section_general', __( 'General', 'otp-login' ), '__return_false', 'otp-login' );
 
-    add_settings_field( 'otp_length',         __( 'OTP Length', 'otp-login' ),          'otp_login_field_otp_length',       'otp-login', 'otp_login_section_general' );
-    add_settings_field( 'otp_expiry_minutes', __( 'OTP Expiry (minutes)', 'otp-login' ), 'otp_login_field_otp_expiry',       'otp-login', 'otp_login_section_general' );
-    add_settings_field( 'block_passwords',    __( 'Block Password Login', 'otp-login' ), 'otp_login_field_block_passwords',  'otp-login', 'otp_login_section_general' );
-    add_settings_field( 'email_only_login',   __( 'Email-Only Login', 'otp-login' ),     'otp_login_field_email_only_login', 'otp-login', 'otp_login_section_general' );
+    add_settings_field( 'otp_length',          __( 'OTP Length', 'otp-login' ),             'otp_login_field_otp_length',        'otp-login', 'otp_login_section_general' );
+    add_settings_field( 'otp_expiry_minutes',  __( 'OTP Expiry (minutes)', 'otp-login' ),   'otp_login_field_otp_expiry',        'otp-login', 'otp_login_section_general' );
+    add_settings_field( 'block_passwords',     __( 'Block Password Login', 'otp-login' ),   'otp_login_field_block_passwords',   'otp-login', 'otp_login_section_general' );
+    add_settings_field( 'email_only_login',    __( 'Email-Only Login', 'otp-login' ),        'otp_login_field_email_only_login',  'otp-login', 'otp_login_section_general' );
+    add_settings_field( 'login_method',        __( 'Login Method', 'otp-login' ),            'otp_login_field_login_method',      'otp-login', 'otp_login_section_general' );
+    add_settings_field( 'otp_resend_cooldown', __( 'Resend Cooldown (seconds)', 'otp-login' ), 'otp_login_field_resend_cooldown', 'otp-login', 'otp_login_section_general' );
 
     // ── Section: Security ─────────────────────────────────────
     add_settings_section(
@@ -124,7 +128,9 @@ function otp_login_register_settings() {
         function () {
             echo '<p>'
                 . esc_html__( 'Customize the OTP email. Available placeholders: ', 'otp-login' )
-                . '<code>{site_name}</code>, <code>{display_name}</code>, <code>{otp}</code>, <code>{expiry_minutes}</code>'
+                . '<code>{site_name}</code>, <code>{display_name}</code>, <code>{otp}</code>, <code>{expiry_minutes}</code>, <code>{magic_link}</code>'
+                . '</p><p>'
+                . esc_html__( 'Add {magic_link} to your body template when Login Method is set to "Magic link" or "Both".', 'otp-login' )
                 . '</p>';
         },
         'otp-login'
@@ -139,14 +145,20 @@ function otp_login_register_settings() {
 function otp_login_sanitize_settings( $input ) {
     $clean = [];
 
-    $clean['otp_length']         = min( 10, max( 4, (int) ( $input['otp_length'] ?? 6 ) ) );
-    $clean['otp_expiry_minutes'] = min( 60, max( 1, (int) ( $input['otp_expiry_minutes'] ?? 10 ) ) );
-    $clean['block_passwords']    = empty( $input['block_passwords'] ) ? 0 : 1;
-    $clean['email_only_login']   = empty( $input['email_only_login'] ) ? 0 : 1;
-    $clean['otp_max_attempts']   = min( 10, max( 1, (int) ( $input['otp_max_attempts'] ?? 3 ) ) );
-    $clean['otp_rate_limit']     = min( 20, max( 1, (int) ( $input['otp_rate_limit'] ?? 5 ) ) );
-    $clean['otp_rate_window']    = min( 60, max( 1, (int) ( $input['otp_rate_window'] ?? 15 ) ) );
-    $clean['disable_xmlrpc']     = empty( $input['disable_xmlrpc'] ) ? 0 : 1;
+    $clean['otp_length']          = min( 10, max( 4, (int) ( $input['otp_length'] ?? 6 ) ) );
+    $clean['otp_expiry_minutes']  = min( 60, max( 1, (int) ( $input['otp_expiry_minutes'] ?? 10 ) ) );
+    $clean['block_passwords']     = empty( $input['block_passwords'] ) ? 0 : 1;
+    $clean['email_only_login']    = empty( $input['email_only_login'] ) ? 0 : 1;
+    $clean['otp_max_attempts']    = min( 10, max( 1, (int) ( $input['otp_max_attempts'] ?? 3 ) ) );
+    $clean['otp_rate_limit']      = min( 20, max( 1, (int) ( $input['otp_rate_limit'] ?? 5 ) ) );
+    $clean['otp_rate_window']     = min( 60, max( 1, (int) ( $input['otp_rate_window'] ?? 15 ) ) );
+    $clean['disable_xmlrpc']      = empty( $input['disable_xmlrpc'] ) ? 0 : 1;
+    $clean['otp_resend_cooldown'] = min( 300, max( 30, (int) ( $input['otp_resend_cooldown'] ?? 60 ) ) );
+
+    $allowed_methods       = [ 'otp', 'magic', 'both' ];
+    $clean['login_method'] = in_array( $input['login_method'] ?? 'otp', $allowed_methods, true )
+        ? $input['login_method']
+        : 'otp';
 
     // Domains: one per line, basic sanity check.
     $raw_domains = sanitize_textarea_field( $input['allowed_domains'] ?? '' );
@@ -203,6 +215,36 @@ function otp_login_field_email_only_login() {
         checked( 1, (int) $s['email_only_login'], false ),
         esc_html__( 'Require an email address (disable username login)', 'otp-login' ),
         esc_html__( 'When checked, the login field only accepts email addresses. Usernames will be rejected.', 'otp-login' )
+    );
+}
+
+function otp_login_field_login_method() {
+    $s       = otp_login_settings();
+    $current = $s['login_method'];
+    $options = [
+        'otp'   => __( 'OTP code only', 'otp-login' ),
+        'magic' => __( 'Magic link only', 'otp-login' ),
+        'both'  => __( 'Both (code and link)', 'otp-login' ),
+    ];
+    echo '<select name="otp_login_settings[login_method]">';
+    foreach ( $options as $value => $label ) {
+        printf(
+            '<option value="%s" %s>%s</option>',
+            esc_attr( $value ),
+            selected( $current, $value, false ),
+            esc_html( $label )
+        );
+    }
+    echo '</select>';
+    echo '<p class="description">' . esc_html__( 'OTP code: user types the code. Magic link: user clicks a one-click login URL in the email. Both: email includes both.', 'otp-login' ) . '</p>';
+}
+
+function otp_login_field_resend_cooldown() {
+    $s = otp_login_settings();
+    printf(
+        '<input type="number" name="otp_login_settings[otp_resend_cooldown]" value="%d" min="30" max="300" class="small-text" /><p class="description">%s</p>',
+        (int) $s['otp_resend_cooldown'],
+        esc_html__( 'Seconds a user must wait before using the Resend button on the OTP form (30–300). Only applies to OTP code and Both modes.', 'otp-login' )
     );
 }
 
@@ -337,9 +379,12 @@ function otp_login_handle_test_email() {
         'display_name' => $current_user->display_name ?: 'Test User',
     ];
 
-    $s        = otp_login_settings();
-    $test_otp = otp_login_generate_otp( (int) $s['otp_length'] );
-    $sent     = otp_login_send_otp_email( $fake_user, $test_otp );
+    $s          = otp_login_settings();
+    $test_otp   = otp_login_generate_otp( (int) $s['otp_length'] );
+    $test_magic = in_array( $s['login_method'], [ 'magic', 'both' ], true )
+        ? add_query_arg( [ 'action' => 'otp_magic', 'token' => 'TEST_TOKEN_PREVIEW' ], wp_login_url() )
+        : '';
+    $sent = otp_login_send_otp_email( $fake_user, $test_otp, $test_magic );
 
     if ( $sent ) {
         printf(

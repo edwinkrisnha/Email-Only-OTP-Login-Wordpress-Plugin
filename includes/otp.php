@@ -5,7 +5,8 @@ defined( 'ABSPATH' ) || exit;
 // 1. REPLACE THE DEFAULT LOGIN FORM
 // ─────────────────────────────────────────────────────────────
 
-add_action( 'login_form_login', 'otp_login_handle_page' );
+add_action( 'login_form_login',     'otp_login_handle_page' );
+add_action( 'login_form_otp_magic', 'otp_login_handle_magic_action' );
 
 function otp_login_handle_page() {
     $action = isset( $_REQUEST['action'] ) ? $_REQUEST['action'] : 'login';
@@ -15,6 +16,11 @@ function otp_login_handle_page() {
 
     if ( isset( $_POST['otp_login_verify'] ) ) {
         otp_login_verify_otp();
+        return;
+    }
+
+    if ( isset( $_POST['otp_login_resend'] ) ) {
+        otp_login_resend_otp();
         return;
     }
 
@@ -34,6 +40,7 @@ function otp_login_handle_page() {
 function otp_login_request_otp() {
     $s          = otp_login_settings();
     $email_only = ! empty( $s['email_only_login'] );
+    $method     = $s['login_method']; // 'otp', 'magic', 'both'
     $username   = isset( $_POST['log'] ) ? sanitize_text_field( wp_unslash( $_POST['log'] ) ) : '';
 
     if ( empty( $username ) ) {
@@ -68,26 +75,44 @@ function otp_login_request_otp() {
 
     // User not found — generic message, no enumeration.
     if ( ! $user ) {
-        otp_login_render_otp_sent_message();
+        otp_login_render_otp_sent_message( $method );
         exit;
     }
 
     // Domain check — generic message if blocked, no enumeration.
     if ( ! otp_login_is_allowed_domain( $user->user_email ) ) {
-        otp_login_render_otp_sent_message();
+        otp_login_render_otp_sent_message( $method );
         exit;
     }
 
-    $otp   = otp_login_generate_otp( (int) $s['otp_length'] );
-    $token = otp_login_store_otp( $user->ID, $otp, (int) $s['otp_expiry_minutes'] );
-    $sent  = otp_login_send_otp_email( $user, $otp );
+    // Generate OTP and/or magic link based on the chosen login method.
+    $otp       = '';
+    $token     = '';
+    $magic_url = '';
+
+    if ( in_array( $method, [ 'otp', 'both' ], true ) ) {
+        $otp   = otp_login_generate_otp( (int) $s['otp_length'] );
+        $token = otp_login_store_otp( $user->ID, $otp, (int) $s['otp_expiry_minutes'] );
+    }
+
+    if ( in_array( $method, [ 'magic', 'both' ], true ) ) {
+        $magic_token = otp_login_store_magic_link( $user->ID, (int) $s['otp_expiry_minutes'] );
+        $magic_url   = otp_login_magic_url( $magic_token );
+    }
+
+    $sent = otp_login_send_otp_email( $user, $otp, $magic_url );
 
     if ( ! $sent ) {
         otp_login_render_username_form( __( 'Could not send OTP email. Please try again.', 'otp-login' ) );
         exit;
     }
 
-    otp_login_render_otp_form( $token );
+    // Magic-only: no code to enter, just tell the user to check email.
+    if ( $method === 'magic' ) {
+        otp_login_render_otp_sent_message( $method );
+    } else {
+        otp_login_render_otp_form( $token );
+    }
     exit;
 }
 
@@ -107,7 +132,7 @@ function otp_login_verify_otp() {
     $result = otp_login_validate_otp( $token, $submitted_otp );
 
     if ( is_wp_error( $result ) ) {
-        // If max attempts were exceeded the token is gone; redirect back to start.
+        // If max attempts exceeded, the token is gone — send back to the username form.
         if ( $result->get_error_code() === 'otp_max_attempts' ) {
             otp_login_render_username_form( $result->get_error_message() );
         } else {
@@ -116,19 +141,116 @@ function otp_login_verify_otp() {
         exit;
     }
 
-    $user_id  = $result;
-    $userdata = get_userdata( $user_id );
-    wp_set_current_user( $user_id );
-    wp_set_auth_cookie( $user_id, false );
-    do_action( 'wp_login', $userdata->user_login, $userdata );
+    otp_login_complete_login( (int) $result );
+}
 
-    $redirect_to = apply_filters( 'login_redirect', admin_url(), '', $userdata );
-    wp_safe_redirect( $redirect_to );
+// ─────────────────────────────────────────────────────────────
+// 4. HANDLE RESEND
+// ─────────────────────────────────────────────────────────────
+
+function otp_login_resend_otp() {
+    $token = isset( $_POST['otp_token'] ) ? sanitize_text_field( wp_unslash( $_POST['otp_token'] ) ) : '';
+
+    if ( empty( $token ) ) {
+        otp_login_render_username_form( __( 'Session expired. Please start over.', 'otp-login' ) );
+        exit;
+    }
+
+    $data = get_transient( 'otp_login_' . $token );
+    if ( ! $data ) {
+        otp_login_render_username_form( __( 'Session expired. Please start over.', 'otp-login' ) );
+        exit;
+    }
+
+    $user_id  = (int) $data['user_id'];
+    $s        = otp_login_settings();
+    $cooldown = (int) $s['otp_resend_cooldown'];
+    $cd_key   = 'otp_resend_cd_' . $user_id;
+    $cd_exp   = get_transient( $cd_key );
+
+    if ( $cd_exp && time() < (int) $cd_exp ) {
+        $remaining = (int) $cd_exp - time();
+        otp_login_render_otp_form(
+            $token,
+            sprintf(
+                /* translators: %d: seconds remaining */
+                _n( 'Please wait %d second before requesting a new code.', 'Please wait %d seconds before requesting a new code.', $remaining, 'otp-login' ),
+                $remaining
+            )
+        );
+        exit;
+    }
+
+    $user = get_userdata( $user_id );
+    if ( ! $user ) {
+        otp_login_render_username_form( __( 'User not found. Please start over.', 'otp-login' ) );
+        exit;
+    }
+
+    // Delete the old token and arm the cooldown before sending, to prevent double-sends.
+    delete_transient( 'otp_login_' . $token );
+    set_transient( $cd_key, time() + $cooldown, $cooldown );
+
+    $method    = $s['login_method'];
+    $otp       = '';
+    $new_token = '';
+    $magic_url = '';
+
+    if ( in_array( $method, [ 'otp', 'both' ], true ) ) {
+        $otp       = otp_login_generate_otp( (int) $s['otp_length'] );
+        $new_token = otp_login_store_otp( $user_id, $otp, (int) $s['otp_expiry_minutes'] );
+    }
+
+    if ( in_array( $method, [ 'magic', 'both' ], true ) ) {
+        $magic_token = otp_login_store_magic_link( $user_id, (int) $s['otp_expiry_minutes'] );
+        $magic_url   = otp_login_magic_url( $magic_token );
+    }
+
+    $sent = otp_login_send_otp_email( $user, $otp, $magic_url );
+
+    if ( ! $sent ) {
+        otp_login_render_otp_form( $new_token, __( 'Could not send OTP email. Please try again.', 'otp-login' ) );
+        exit;
+    }
+
+    otp_login_render_otp_form( $new_token, '', __( 'A new code has been sent to your email.', 'otp-login' ) );
     exit;
 }
 
 // ─────────────────────────────────────────────────────────────
-// 4. OTP HELPERS
+// 5. HANDLE MAGIC LINK
+// ─────────────────────────────────────────────────────────────
+
+function otp_login_handle_magic_action() {
+    $token = isset( $_GET['token'] ) ? sanitize_text_field( wp_unslash( $_GET['token'] ) ) : '';
+
+    if ( empty( $token ) ) {
+        otp_login_render_username_form( __( 'Invalid login link.', 'otp-login' ) );
+        exit;
+    }
+
+    $data = get_transient( 'otp_magic_' . $token );
+
+    if ( ! $data || time() > (int) $data['expires'] ) {
+        delete_transient( 'otp_magic_' . $token );
+        otp_login_render_username_form( __( 'This login link has expired. Please request a new one.', 'otp-login' ) );
+        exit;
+    }
+
+    // Consume the token immediately — magic links are single-use.
+    delete_transient( 'otp_magic_' . $token );
+
+    $userdata = get_userdata( (int) $data['user_id'] );
+    if ( ! $userdata ) {
+        otp_login_render_username_form( __( 'User not found. Please try again.', 'otp-login' ) );
+        exit;
+    }
+
+    otp_login_complete_login( (int) $data['user_id'] );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 6. OTP HELPERS
 // ─────────────────────────────────────────────────────────────
 
 function otp_login_generate_otp( $length = 6 ) {
@@ -161,7 +283,6 @@ function otp_login_validate_otp( $token, $submitted_otp ) {
 
     $attempts = isset( $data['attempts'] ) ? (int) $data['attempts'] : 0;
 
-    // Guard: token already exhausted (shouldn't normally reach here, but be safe).
     if ( $attempts >= $max ) {
         delete_transient( 'otp_login_' . $token );
         return new WP_Error( 'otp_max_attempts', __( 'Too many incorrect attempts. Please request a new code.', 'otp-login' ) );
@@ -175,7 +296,7 @@ function otp_login_validate_otp( $token, $submitted_otp ) {
             return new WP_Error( 'otp_max_attempts', __( 'Too many incorrect attempts. Please request a new code.', 'otp-login' ) );
         }
 
-        // Persist the updated attempt count while preserving the remaining TTL.
+        // Persist updated attempt count, preserving the remaining TTL.
         $remaining_ttl = max( 1, $data['expires'] - time() );
         set_transient( 'otp_login_' . $token, $data, $remaining_ttl );
 
@@ -193,7 +314,29 @@ function otp_login_validate_otp( $token, $submitted_otp ) {
     return (int) $data['user_id'];
 }
 
-function otp_login_send_otp_email( $user, $otp ) {
+// ─────────────────────────────────────────────────────────────
+// 7. MAGIC LINK HELPERS
+// ─────────────────────────────────────────────────────────────
+
+function otp_login_store_magic_link( $user_id, $expiry_minutes = 10 ) {
+    $token  = wp_generate_password( 48, false );
+    $expiry = $expiry_minutes * MINUTE_IN_SECONDS;
+    set_transient( 'otp_magic_' . $token, [
+        'user_id' => $user_id,
+        'expires' => time() + $expiry,
+    ], $expiry );
+    return $token;
+}
+
+function otp_login_magic_url( $token ) {
+    return add_query_arg( [ 'action' => 'otp_magic', 'token' => $token ], wp_login_url() );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 8. EMAIL
+// ─────────────────────────────────────────────────────────────
+
+function otp_login_send_otp_email( $user, $otp, $magic_url = '' ) {
     $s              = otp_login_settings();
     $site_name      = get_bloginfo( 'name' );
     $expiry_minutes = (int) $s['otp_expiry_minutes'];
@@ -202,6 +345,7 @@ function otp_login_send_otp_email( $user, $otp ) {
         '{site_name}'      => $site_name,
         '{display_name}'   => $user->display_name,
         '{otp}'            => $otp,
+        '{magic_link}'     => $magic_url,
         '{expiry_minutes}' => $expiry_minutes,
     ];
 
@@ -212,7 +356,22 @@ function otp_login_send_otp_email( $user, $otp ) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 5. RENDER HELPERS
+// 9. LOGIN COMPLETION (shared by OTP verify and magic link)
+// ─────────────────────────────────────────────────────────────
+
+function otp_login_complete_login( $user_id ) {
+    $userdata = get_userdata( $user_id );
+    wp_set_current_user( $user_id );
+    wp_set_auth_cookie( $user_id, false );
+    do_action( 'wp_login', $userdata->user_login, $userdata );
+
+    $redirect_to = apply_filters( 'login_redirect', admin_url(), '', $userdata );
+    wp_safe_redirect( $redirect_to );
+    exit;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 10. RENDER HELPERS
 // ─────────────────────────────────────────────────────────────
 
 function otp_login_render_username_form( $error = '' ) {
@@ -244,13 +403,33 @@ function otp_login_render_username_form( $error = '' ) {
     exit;
 }
 
-function otp_login_render_otp_form( $token, $error = '' ) {
-    $s = otp_login_settings();
+/**
+ * @param string $token   OTP session token.
+ * @param string $error   Error message to display (red notice).
+ * @param string $message Success message to display (green notice), e.g. after resend.
+ */
+function otp_login_render_otp_form( $token, $error = '', $message = '' ) {
+    $s        = otp_login_settings();
+    $method   = $s['login_method'];
+    $cooldown = (int) $s['otp_resend_cooldown'];
+    $show_otp = in_array( $method, [ 'otp', 'both' ], true );
+
     login_header( __( 'Enter One-Time Code', 'otp-login' ) );
     ?>
     <p class="message">
-        <?php esc_html_e( 'A one-time login code has been sent to your email address. Enter it below to log in.', 'otp-login' ); ?>
+        <?php
+        if ( $method === 'both' ) {
+            esc_html_e( 'A login code and a one-click link have been sent to your email. Enter the code below or click the link in the email.', 'otp-login' );
+        } else {
+            esc_html_e( 'A one-time login code has been sent to your email address. Enter it below to log in.', 'otp-login' );
+        }
+        ?>
     </p>
+
+    <?php if ( $message ) : ?>
+        <p class="message" style="border-left-color:#00a32a;"><?php echo esc_html( $message ); ?></p>
+    <?php endif; ?>
+
     <form name="otpform" id="otpform" action="<?php echo esc_url( wp_login_url() ); ?>" method="post">
         <?php if ( $error ) : ?>
             <div id="login_error" class="notice notice-error">
@@ -258,6 +437,7 @@ function otp_login_render_otp_form( $token, $error = '' ) {
             </div>
         <?php endif; ?>
         <input type="hidden" name="otp_token" value="<?php echo esc_attr( $token ); ?>" />
+        <?php if ( $show_otp ) : ?>
         <p>
             <label for="otp_code"><?php esc_html_e( 'One-Time Code', 'otp-login' ); ?></label>
             <input type="text" name="otp_code" id="otp_code" class="input" value="" size="20"
@@ -269,23 +449,63 @@ function otp_login_render_otp_form( $token, $error = '' ) {
                    class="button button-primary button-large"
                    value="<?php esc_attr_e( 'Log In', 'otp-login' ); ?>" />
         </p>
-        <p style="text-align:center;">
-            <a href="<?php echo esc_url( wp_login_url() ); ?>">
-                &larr; <?php esc_html_e( 'Request a new code', 'otp-login' ); ?>
-            </a>
-        </p>
+        <?php endif; ?>
     </form>
+
+    <?php if ( $show_otp ) : ?>
+    <form id="resendform" action="<?php echo esc_url( wp_login_url() ); ?>" method="post" style="text-align:center; margin-top:1em;">
+        <input type="hidden" name="otp_token" value="<?php echo esc_attr( $token ); ?>" />
+        <button type="submit" name="otp_login_resend" id="otp-resend-btn" class="button button-secondary" disabled>
+            <?php
+            printf(
+                /* translators: %d: cooldown in seconds */
+                esc_html__( 'Resend code (%ds)', 'otp-login' ),
+                $cooldown
+            );
+            ?>
+        </button>
+    </form>
+    <script>
+    (function () {
+        var btn      = document.getElementById('otp-resend-btn');
+        var seconds  = <?php echo (int) $cooldown; ?>;
+        var label    = <?php echo wp_json_encode( __( 'Resend code', 'otp-login' ) ); ?>;
+        var interval = setInterval( function () {
+            seconds--;
+            if ( seconds <= 0 ) {
+                clearInterval( interval );
+                btn.disabled    = false;
+                btn.textContent = label;
+            } else {
+                btn.textContent = label + ' (' + seconds + 's)';
+            }
+        }, 1000 );
+    })();
+    </script>
+    <?php endif; ?>
+
+    <p style="text-align:center; margin-top:1em;">
+        <a href="<?php echo esc_url( wp_login_url() ); ?>">
+            &larr; <?php esc_html_e( 'Back to login', 'otp-login' ); ?>
+        </a>
+    </p>
     <?php
     login_footer();
     exit;
 }
 
-function otp_login_render_otp_sent_message() {
+function otp_login_render_otp_sent_message( $method = 'otp' ) {
     login_header( __( 'Check your email', 'otp-login' ) );
+
+    if ( $method === 'magic' ) {
+        $msg = __( 'If an account exists for that address, a login link has been sent to your email. Click the link to log in.', 'otp-login' );
+    } elseif ( $method === 'both' ) {
+        $msg = __( 'If an account exists for that address, a login code and a one-click link have been sent to your email.', 'otp-login' );
+    } else {
+        $msg = __( 'If an account exists for that username, a one-time login code has been sent to the associated email address.', 'otp-login' );
+    }
     ?>
-    <p class="message">
-        <?php esc_html_e( 'If an account exists for that username, a one-time login code has been sent to the associated email address.', 'otp-login' ); ?>
-    </p>
+    <p class="message"><?php echo esc_html( $msg ); ?></p>
     <p style="text-align:center;">
         <a href="<?php echo esc_url( wp_login_url() ); ?>">
             &larr; <?php esc_html_e( 'Back to login', 'otp-login' ); ?>
@@ -297,7 +517,7 @@ function otp_login_render_otp_sent_message() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 6. BLOCK PASSWORD AUTH (respects the settings toggle)
+// 11. BLOCK PASSWORD AUTH (respects the settings toggle)
 // ─────────────────────────────────────────────────────────────
 
 add_filter( 'authenticate', 'otp_login_block_password_auth', 30, 3 );
@@ -313,7 +533,7 @@ function otp_login_block_password_auth( $user, $username, $password ) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 7. BLOCK REGISTRATION & PROFILE SAVES FOR DISALLOWED DOMAINS
+// 12. BLOCK REGISTRATION & PROFILE SAVES FOR DISALLOWED DOMAINS
 // ─────────────────────────────────────────────────────────────
 
 add_filter( 'registration_errors', 'otp_login_check_registration_domain', 10, 3 );
