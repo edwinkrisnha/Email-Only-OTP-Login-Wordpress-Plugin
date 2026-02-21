@@ -171,4 +171,4 @@ email-only-otp-login/
 
 ## License
 
-GPLv3. See [LICENSE](LICENSE).
+GPLv2 or later. See [LICENSE](LICENSE).
