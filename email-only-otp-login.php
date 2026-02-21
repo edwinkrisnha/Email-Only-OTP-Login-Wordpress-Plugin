@@ -3,7 +3,7 @@
  * Plugin Name:       Email Only OTP Login
  * Plugin URI:        https://github.com/edwinkrisnha/Email-Only-OTP-Login-Wordpress-Plugin
  * Description:       Replaces the default WordPress login with a username-only + email OTP flow. Configurable via Settings → OTP Login.
- * Version:           1.7.0
+ * Version:           1.7.1
  * Author:            Edwin Krisnha
  * Author URI:        https://github.com/edwinkrisnha
  * License:           GPLv2 or later

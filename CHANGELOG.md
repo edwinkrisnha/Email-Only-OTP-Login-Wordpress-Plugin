@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-02-21
+
+### Security
+- **CSRF protection on login forms** — All three login forms (username/OTP request, OTP verify, resend) now include WordPress nonces (`wp_nonce_field()`). Each handler verifies the nonce with `wp_verify_nonce()` before processing. Prevents cross-site request forgery attacks that could silently trigger OTP emails to victims.
+
+### Fixed
+- **License file** — `LICENSE` now contains the GPLv2 text to match the `GPLv2 or later` declaration in the plugin header and README.
+
 ## [1.7.0] - 2026-02-21
 
 ### Added
@@ -13,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `otp_login_render_email()` — New helper in `includes/otp.php` that builds and returns `['subject', 'html', 'text']`. All three send paths (initial request, resend, test email) use the same render function — no duplication.
 
 ### Changed
+- **Admin UI consolidated into a single tabbed page** — The two separate menu entries (Settings → OTP Login and Settings → OTP Login Log) are replaced by a single **Settings → Email Only OTP Login** page with **Settings** and **Login Log** tabs. All internal links updated accordingly.
 - `otp_login_send_otp_email()` — Now calls `otp_login_render_email()`, attaches the plain-text body as `AltBody` via a `phpmailer_init` action, and sends with `Content-Type: text/html`. The action is added and immediately removed around the `wp_mail()` call to prevent leaking into other mail sends.
 - Email Template admin section — Description updated to explain the HTML template is built-in and the body field is now the plain-text fallback. "Body" field label renamed to "Plain-text fallback".
 - `otp_login_render_email()` — Template path now resolved via `locate_template()` so themes can override the HTML template by placing a file at `email-only-otp-login/email-otp.php` inside the active theme directory.
