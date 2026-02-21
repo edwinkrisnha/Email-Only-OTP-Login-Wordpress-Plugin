@@ -1,10 +1,17 @@
 <?php
 /**
- * Plugin Name: Email Only OTP Login
- * Plugin URI: https://github.com/edwinkrisnha/Email-Only-OTP-Login-Wordpress-Plugin
- * Description: Replaces the default WordPress login with a username-only + email OTP flow. Configurable via Settings → OTP Login.
- * Version:     1.7.0
- * Author:      <a href="mailto:edwin.krisnha@gmail.com">Edwin Krisnha</a>
+ * Plugin Name:       Email Only OTP Login
+ * Plugin URI:        https://github.com/edwinkrisnha/Email-Only-OTP-Login-Wordpress-Plugin
+ * Description:       Replaces the default WordPress login with a username-only + email OTP flow. Configurable via Settings → OTP Login.
+ * Version:           1.7.0
+ * Author:            Edwin Krisnha
+ * Author URI:        https://github.com/edwinkrisnha
+ * License:           GPLv2 or later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       otp-login
+ * Requires at least: 5.6
+ * Requires PHP:      7.4
+ * Tested up to:      6.7
  */
 
 defined( 'ABSPATH' ) || exit;
