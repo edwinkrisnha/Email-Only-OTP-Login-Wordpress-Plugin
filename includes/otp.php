@@ -58,6 +58,7 @@ function otp_login_request_otp() {
 
     // Rate limit check — before any user lookup to avoid enumeration timing differences.
     if ( ! otp_login_check_rate_limit() ) {
+        otp_login_log_event( $username, 'rate_limited' );
         otp_login_render_username_form( __( 'Too many requests. Please wait before requesting another code.', 'otp-login' ) );
         exit;
     }
@@ -107,6 +108,8 @@ function otp_login_request_otp() {
         exit;
     }
 
+    otp_login_log_event( $user->user_email, 'otp_sent', $user->ID );
+
     // Magic-only: no code to enter, just tell the user to check email.
     if ( $method === 'magic' ) {
         otp_login_render_otp_sent_message( $method );
@@ -129,11 +132,24 @@ function otp_login_verify_otp() {
         exit;
     }
 
+    // Peek at the transient now — validate may delete it before we can log.
+    $peek       = get_transient( 'otp_login_' . $token );
+    $log_uid    = isset( $peek['user_id'] ) ? (int) $peek['user_id'] : 0;
+    $log_ident  = $log_uid ? ( get_userdata( $log_uid )->user_email ?? '' ) : '';
+
     $result = otp_login_validate_otp( $token, $submitted_otp );
 
     if ( is_wp_error( $result ) ) {
-        // If max attempts exceeded, the token is gone — send back to the username form.
-        if ( $result->get_error_code() === 'otp_max_attempts' ) {
+        $code  = $result->get_error_code();
+        $event = 'otp_failed';
+        if ( $code === 'otp_max_attempts' ) {
+            $event = 'otp_exhausted';
+        } elseif ( $code === 'otp_expired' ) {
+            $event = 'otp_expired';
+        }
+        otp_login_log_event( $log_ident, $event, $log_uid );
+
+        if ( $code === 'otp_max_attempts' ) {
             otp_login_render_username_form( $result->get_error_message() );
         } else {
             otp_login_render_otp_form( $token, $result->get_error_message() );
@@ -141,6 +157,7 @@ function otp_login_verify_otp() {
         exit;
     }
 
+    otp_login_log_event( $log_ident, 'otp_verified', (int) $result );
     otp_login_complete_login( (int) $result );
 }
 
@@ -213,6 +230,7 @@ function otp_login_resend_otp() {
         exit;
     }
 
+    otp_login_log_event( $user->user_email, 'otp_sent', $user_id );
     otp_login_render_otp_form( $new_token, '', __( 'A new code has been sent to your email.', 'otp-login' ) );
     exit;
 }
@@ -233,6 +251,7 @@ function otp_login_handle_magic_action() {
 
     if ( ! $data || time() > (int) $data['expires'] ) {
         delete_transient( 'otp_magic_' . $token );
+        otp_login_log_event( '', 'magic_expired' );
         otp_login_render_username_form( __( 'This login link has expired. Please request a new one.', 'otp-login' ) );
         exit;
     }
@@ -240,13 +259,15 @@ function otp_login_handle_magic_action() {
     // Consume the token immediately — magic links are single-use.
     delete_transient( 'otp_magic_' . $token );
 
-    $userdata = get_userdata( (int) $data['user_id'] );
+    $user_id  = (int) $data['user_id'];
+    $userdata = get_userdata( $user_id );
     if ( ! $userdata ) {
         otp_login_render_username_form( __( 'User not found. Please try again.', 'otp-login' ) );
         exit;
     }
 
-    otp_login_complete_login( (int) $data['user_id'] );
+    otp_login_log_event( $userdata->user_email, 'magic_used', $user_id );
+    otp_login_complete_login( $user_id );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -524,6 +545,7 @@ add_filter( 'authenticate', 'otp_login_block_password_auth', 30, 3 );
 function otp_login_block_password_auth( $user, $username, $password ) {
     $s = otp_login_settings();
     if ( ! empty( $s['block_passwords'] ) && ! empty( $password ) ) {
+        otp_login_log_event( $username, 'password_blocked' );
         return new WP_Error(
             'otp_required',
             __( 'Password login is disabled. Please use the one-time code sent to your email.', 'otp-login' )

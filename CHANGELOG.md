@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-02-21
+
+### Added
+- **Login attempt log** — New `wp_otp_login_log` database table records every login event. Viewable via Settings → OTP Login Log (also linked from the Plugins list "Log" shortcut and the Settings page).
+- **Log admin page** — Paginated table showing timestamp (in site timezone), identifier, IP address, event badge, and resolved user. Includes a "Clear log" button.
+- **Log retention setting** — Configurable number of days to keep entries (1–365, default 30). Pruning runs automatically once per day.
+- Events logged: `otp_sent`, `otp_verified`, `otp_failed`, `otp_expired`, `otp_exhausted`, `magic_used`, `magic_expired`, `rate_limited`, `password_blocked`.
+- Plugin activation hook to create the log table on first activation.
+- `plugins_loaded` check to create/upgrade the table if it doesn't exist (handles manual plugin copies).
+- "Log" shortcut link added to the Plugins list row alongside "Settings".
+
+### Changed
+- `includes/log.php` added as a new include file (required between security.php and otp.php).
+- Main plugin file now defines `OTP_LOGIN_DB_VERSION` constant and registers the activation hook.
+
 ## [1.5.0] - 2026-02-21
 
 ### Added

@@ -20,8 +20,9 @@ function otp_login_settings() {
         'otp_max_attempts'    => 3,
         'otp_rate_limit'      => 5,
         'otp_rate_window'     => 15,
-        'disable_xmlrpc'      => 1,
-        'email_subject'       => '[{site_name}] Your one-time login code',
+        'disable_xmlrpc'          => 1,
+        'otp_log_retention_days'  => 30,
+        'email_subject'           => '[{site_name}] Your one-time login code',
         'email_body'          => "Hi {display_name},\n\nYour one-time login code is:\n\n    {otp}\n\nThis code will expire in {expiry_minutes} minutes.\n\nIf you did not request this code, you can safely ignore this email.\n\n— {site_name}",
     ];
 
@@ -138,6 +139,23 @@ function otp_login_register_settings() {
 
     add_settings_field( 'email_subject', __( 'Subject', 'otp-login' ), 'otp_login_field_email_subject', 'otp-login', 'otp_login_section_email' );
     add_settings_field( 'email_body',    __( 'Body', 'otp-login' ),    'otp_login_field_email_body',    'otp-login', 'otp_login_section_email' );
+
+    // ── Section: Log ──────────────────────────────────────────
+    add_settings_section(
+        'otp_login_section_log',
+        __( 'Login Log', 'otp-login' ),
+        function () {
+            $log_url = admin_url( 'options-general.php?page=otp-login-log' );
+            echo '<p>' . sprintf(
+                /* translators: %s: URL to log page */
+                wp_kses( __( 'Keep a record of all login events. <a href="%s">View Login Log &rarr;</a>', 'otp-login' ), [ 'a' => [ 'href' => [] ] ] ),
+                esc_url( $log_url )
+            ) . '</p>';
+        },
+        'otp-login'
+    );
+
+    add_settings_field( 'otp_log_retention_days', __( 'Log Retention (days)', 'otp-login' ), 'otp_login_field_log_retention', 'otp-login', 'otp_login_section_log' );
 }
 
 // ── Sanitisation ──────────────────────────────────────────────
@@ -152,8 +170,9 @@ function otp_login_sanitize_settings( $input ) {
     $clean['otp_max_attempts']    = min( 10, max( 1, (int) ( $input['otp_max_attempts'] ?? 3 ) ) );
     $clean['otp_rate_limit']      = min( 20, max( 1, (int) ( $input['otp_rate_limit'] ?? 5 ) ) );
     $clean['otp_rate_window']     = min( 60, max( 1, (int) ( $input['otp_rate_window'] ?? 15 ) ) );
-    $clean['disable_xmlrpc']      = empty( $input['disable_xmlrpc'] ) ? 0 : 1;
-    $clean['otp_resend_cooldown'] = min( 300, max( 30, (int) ( $input['otp_resend_cooldown'] ?? 60 ) ) );
+    $clean['disable_xmlrpc']         = empty( $input['disable_xmlrpc'] ) ? 0 : 1;
+    $clean['otp_resend_cooldown']    = min( 300, max( 30, (int) ( $input['otp_resend_cooldown'] ?? 60 ) ) );
+    $clean['otp_log_retention_days'] = min( 365, max( 1, (int) ( $input['otp_log_retention_days'] ?? 30 ) ) );
 
     $allowed_methods       = [ 'otp', 'magic', 'both' ];
     $clean['login_method'] = in_array( $input['login_method'] ?? 'otp', $allowed_methods, true )
@@ -285,6 +304,15 @@ function otp_login_field_disable_xmlrpc() {
     );
 }
 
+function otp_login_field_log_retention() {
+    $s = otp_login_settings();
+    printf(
+        '<input type="number" name="otp_login_settings[otp_log_retention_days]" value="%d" min="1" max="365" class="small-text" /><p class="description">%s</p>',
+        (int) $s['otp_log_retention_days'],
+        esc_html__( 'How many days to keep login log entries (1–365). Older entries are pruned automatically.', 'otp-login' )
+    );
+}
+
 function otp_login_field_allowed_domains() {
     $s = otp_login_settings();
     printf(
@@ -403,11 +431,16 @@ function otp_login_handle_test_email() {
 
 add_filter( 'plugin_action_links_' . plugin_basename( OTP_LOGIN_PLUGIN_FILE ), 'otp_login_plugin_action_links' );
 function otp_login_plugin_action_links( $links ) {
+    $log_link = sprintf(
+        '<a href="%s">%s</a>',
+        esc_url( admin_url( 'options-general.php?page=otp-login-log' ) ),
+        esc_html__( 'Log', 'otp-login' )
+    );
     $settings_link = sprintf(
         '<a href="%s">%s</a>',
         esc_url( admin_url( 'options-general.php?page=otp-login' ) ),
         esc_html__( 'Settings', 'otp-login' )
     );
-    array_unshift( $links, $settings_link );
+    array_unshift( $links, $log_link, $settings_link );
     return $links;
 }

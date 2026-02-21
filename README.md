@@ -14,6 +14,7 @@ A WordPress plugin that replaces the default password-based login with a secure 
 - **Max OTP attempts** — Invalidate codes after a configurable number of wrong guesses.
 - **XML-RPC protection** — Optionally disable XML-RPC, which requires password auth and bypasses OTP.
 - **REST API protection** — Block Authorization-header-based auth (Basic Auth, Application Passwords) when password login is disabled.
+- **Login attempt log** — Admin table showing every login event: timestamp, identifier, IP, event type, and resolved user.
 - **Customizable email template** — Edit the subject and body with placeholder support.
 - **Test email tool** — Send a preview OTP email from the admin panel to verify your mail configuration.
 
@@ -53,6 +54,34 @@ Navigate to **Settings → OTP Login** in the WordPress admin.
 | Rate Limit Window | 15 min | Time window for rate limiting (1–60 min). |
 | Disable XML-RPC | On | Recommended — XML-RPC requires password auth and bypasses OTP. |
 
+### Login Log
+
+Navigate to **Settings → OTP Login Log** to view recent login activity. Also accessible via the **"Log"** shortcut on the Plugins list row.
+
+| Column | Description |
+|---|---|
+| Date / Time | Timestamp in the site's configured timezone. |
+| Identifier | Username or email address that was submitted. |
+| IP Address | Client IP at the time of the attempt. |
+| Event | Colour-coded badge (see table below). |
+| User | Resolved WordPress display name and username, if known. |
+
+**Event types:**
+
+| Event | Meaning |
+|---|---|
+| OTP sent | OTP or magic link email was sent successfully. |
+| OTP verified | Correct code entered — login completed. |
+| Magic link used | Magic link clicked — login completed. |
+| OTP failed | Wrong code entered (attempts remaining). |
+| OTP expired | Token expired before a correct code was entered. |
+| Attempts exhausted | Max wrong guesses reached — token invalidated. |
+| Magic link expired | Magic link clicked after it expired. |
+| Rate limited | Request blocked by the IP rate limiter. |
+| Password blocked | Password login attempted while it is disabled. |
+
+**Log Retention** (Settings → OTP Login → Login Log section): configure how many days to keep entries (default 30). Old entries are pruned automatically once per day.
+
 ### Allowed Email Domains
 
 Enter one domain per line (e.g. `example.com`). Leave blank to allow all domains. Users whose email does not match will see a generic "code sent" message (no enumeration).
@@ -89,7 +118,8 @@ email-only-otp-login/
 ├── includes/
 │   ├── settings.php           # Admin settings, field renderers
 │   ├── otp.php                # Login flow, OTP helpers, render forms
-│   └── security.php           # Rate limiting, XML-RPC, REST API protection
+│   ├── security.php           # Rate limiting, XML-RPC, REST API protection
+│   └── log.php                # Login attempt log (DB table, admin page)
 ├── CHANGELOG.md
 ├── LICENSE
 └── README.md
@@ -103,6 +133,7 @@ email-only-otp-login/
 - User enumeration is prevented — invalid usernames, blocked domains, and non-existent accounts all produce the same generic response.
 - Rate limiting counters are stored as transients, keyed by a hash of the client IP.
 - Resend cooldowns are enforced server-side per user, independent of the client-side countdown.
+- Login events are stored in a dedicated `{prefix}otp_login_log` database table with timestamps in UTC.
 
 ## License
 
