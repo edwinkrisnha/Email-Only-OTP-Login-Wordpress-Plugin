@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.4.0] - 2026-02-21
+
+### Added
+- **Rate limiting** — OTP requests are now limited per IP. Configurable max requests and time window via Settings → Security.
+- **Max OTP attempts** — Codes are invalidated after a configurable number of wrong guesses. Remaining attempts are shown to the user on each failed entry.
+- **XML-RPC protection** — New setting to disable XML-RPC entirely (on by default), preventing password-based authentication through that endpoint.
+- **REST API protection** — Authorization-header-based auth (Basic Auth, Application Passwords) is now blocked when "Block Password Login" is enabled. Cookie-authenticated sessions from OTP login are unaffected.
+- **Security settings section** — New "Security" section in the admin settings page for all the above options.
+
+### Changed
+- Plugin code split into `includes/settings.php`, `includes/otp.php`, and `includes/security.php` for maintainability.
+- Main plugin file (`email-only-otp-login.php`) is now a lightweight bootstrap.
+- `otp_login_store_otp()` now stores an `attempts` counter alongside each token.
+- `otp_login_validate_otp()` now enforces attempt limits and persists the counter with the remaining TTL intact.
+- Rate limit counter is incremented regardless of whether the submitted username exists, preventing timing-based user enumeration.
+- When max attempts are exceeded on the OTP form, the user is redirected back to the username form instead of staying on the OTP form with a dead token.
+
+## [1.3.0] - 2026-02-21
+
+### Added
+- **Email-Only Login setting** — When enabled, the login field accepts only email addresses. Usernames are rejected server-side with a clear error message.
+- Login form input changes dynamically based on the setting: label, `type`, and `autocomplete` attributes all update accordingly.
+
+## [1.2.0] - Initial release
+
+### Added
+- Replaces the default WordPress login form with a two-step OTP flow (username/email → email code).
+- OTP codes are hashed with `wp_hash_password()` before storage and deleted after use.
+- Codes are stored as WordPress transients with configurable length (4–10 digits) and expiry (1–60 minutes).
+- Block Password Login setting to disable all password-based authentication.
+- Domain allow-list to restrict login and registration to specific email domains.
+- User enumeration protection — unknown users and blocked domains produce a generic "code sent" response.
+- Customizable OTP email subject and body with `{site_name}`, `{display_name}`, `{otp}`, and `{expiry_minutes}` placeholders.
+- Test Email tool in the admin panel.
+- "Settings" shortcut link on the Plugins list page.
+- Registration and profile update domain enforcement.

@@ -1,0 +1,30 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# PHP / Composer
+vendor/
+composer.lock
+
+# Node / npm (if ever used for build tools)
+node_modules/
+package-lock.json
+yarn.lock
+
+# WordPress build artifacts
+*.zip
+
+# Local development
+.env
+.env.*
+wp-config.php
+
+# Logs
+*.log
