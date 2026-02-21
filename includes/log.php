@@ -87,26 +87,10 @@ function otp_login_log_prune_maybe() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ADMIN MENU
+// LOG TAB CONTENT (rendered inside the unified settings page)
 // ─────────────────────────────────────────────────────────────
 
-add_action( 'admin_menu', 'otp_login_log_admin_menu' );
-function otp_login_log_admin_menu() {
-    add_submenu_page(
-        'options-general.php',
-        __( 'OTP Login Log', 'otp-login' ),
-        __( 'OTP Login Log', 'otp-login' ),
-        'manage_options',
-        'otp-login-log',
-        'otp_login_log_page'
-    );
-}
-
-// ─────────────────────────────────────────────────────────────
-// ADMIN PAGE
-// ─────────────────────────────────────────────────────────────
-
-function otp_login_log_page() {
+function otp_login_log_render_content() {
     if ( ! current_user_can( 'manage_options' ) ) {
         return;
     }
@@ -146,85 +130,78 @@ function otp_login_log_page() {
         'password_blocked' => [ 'label' => __( 'Password blocked', 'otp-login' ),   'color' => '#d63638' ],
     ];
     ?>
-    <div class="wrap">
-        <h1><?php esc_html_e( 'OTP Login Log', 'otp-login' ); ?></h1>
-        <p>
-            <?php
-            printf(
-                /* translators: %d: total log entries */
-                esc_html__( '%d entries total.', 'otp-login' ),
-                $total_items
-            );
+    <p>
+        <?php
+        printf(
+            /* translators: %d: total log entries */
+            esc_html__( '%d entries total.', 'otp-login' ),
+            $total_items
+        );
+        ?>
+    </p>
+
+    <?php if ( $total_items > 0 ) : ?>
+    <table class="wp-list-table widefat fixed striped" style="margin-top:1em;">
+        <thead>
+            <tr>
+                <th style="width:160px;"><?php esc_html_e( 'Date / Time', 'otp-login' ); ?></th>
+                <th><?php esc_html_e( 'Identifier', 'otp-login' ); ?></th>
+                <th style="width:140px;"><?php esc_html_e( 'IP Address', 'otp-login' ); ?></th>
+                <th style="width:160px;"><?php esc_html_e( 'Event', 'otp-login' ); ?></th>
+                <th><?php esc_html_e( 'User', 'otp-login' ); ?></th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ( $rows as $row ) :
+                $meta  = $event_meta[ $row->event ] ?? [ 'label' => $row->event, 'color' => '#787c82' ];
+                $udata = $row->user_id ? get_userdata( (int) $row->user_id ) : null;
+                $ts    = strtotime( $row->attempted_at . ' UTC' );
             ?>
-            &nbsp;
-            <a href="<?php echo esc_url( admin_url( 'options-general.php?page=otp-login' ) ); ?>">
-                &larr; <?php esc_html_e( 'Back to Settings', 'otp-login' ); ?>
-            </a>
-        </p>
+            <tr>
+                <td><?php echo esc_html( wp_date( 'Y-m-d H:i:s', $ts ) ); ?></td>
+                <td><?php echo esc_html( $row->identifier ); ?></td>
+                <td><code><?php echo esc_html( $row->ip ); ?></code></td>
+                <td>
+                    <span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:<?php echo esc_attr( $meta['color'] ); ?>;">
+                        <?php echo esc_html( $meta['label'] ); ?>
+                    </span>
+                </td>
+                <td>
+                    <?php if ( $udata ) : ?>
+                        <?php echo esc_html( $udata->display_name ); ?>
+                        <span style="color:#787c82;">(<?php echo esc_html( $udata->user_login ); ?>)</span>
+                    <?php else : ?>
+                        <span style="color:#787c82;">—</span>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
 
-        <?php if ( $total_items > 0 ) : ?>
-        <table class="wp-list-table widefat fixed striped" style="margin-top:1em;">
-            <thead>
-                <tr>
-                    <th style="width:160px;"><?php esc_html_e( 'Date / Time', 'otp-login' ); ?></th>
-                    <th><?php esc_html_e( 'Identifier', 'otp-login' ); ?></th>
-                    <th style="width:140px;"><?php esc_html_e( 'IP Address', 'otp-login' ); ?></th>
-                    <th style="width:160px;"><?php esc_html_e( 'Event', 'otp-login' ); ?></th>
-                    <th><?php esc_html_e( 'User', 'otp-login' ); ?></th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ( $rows as $row ) :
-                    $meta  = $event_meta[ $row->event ] ?? [ 'label' => $row->event, 'color' => '#787c82' ];
-                    $udata = $row->user_id ? get_userdata( (int) $row->user_id ) : null;
-                    $ts    = strtotime( $row->attempted_at . ' UTC' );
-                ?>
-                <tr>
-                    <td><?php echo esc_html( wp_date( 'Y-m-d H:i:s', $ts ) ); ?></td>
-                    <td><?php echo esc_html( $row->identifier ); ?></td>
-                    <td><code><?php echo esc_html( $row->ip ); ?></code></td>
-                    <td>
-                        <span style="display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:<?php echo esc_attr( $meta['color'] ); ?>;">
-                            <?php echo esc_html( $meta['label'] ); ?>
-                        </span>
-                    </td>
-                    <td>
-                        <?php if ( $udata ) : ?>
-                            <?php echo esc_html( $udata->display_name ); ?>
-                            <span style="color:#787c82;">(<?php echo esc_html( $udata->user_login ); ?>)</span>
-                        <?php else : ?>
-                            <span style="color:#787c82;">—</span>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <?php if ( $total_pages > 1 ) : ?>
-        <div class="tablenav bottom" style="margin-top:.5em;">
-            <div class="tablenav-pages">
-                <?php
-                echo paginate_links( [
-                    'base'      => add_query_arg( 'paged', '%#%' ),
-                    'format'    => '',
-                    'current'   => $current,
-                    'total'     => $total_pages,
-                    'prev_text' => '&laquo;',
-                    'next_text' => '&raquo;',
-                ] );
-                ?>
-            </div>
+    <?php if ( $total_pages > 1 ) : ?>
+    <div class="tablenav bottom" style="margin-top:.5em;">
+        <div class="tablenav-pages">
+            <?php
+            echo paginate_links( [
+                'base'      => add_query_arg( 'paged', '%#%' ),
+                'format'    => '',
+                'current'   => $current,
+                'total'     => $total_pages,
+                'prev_text' => '&laquo;',
+                'next_text' => '&raquo;',
+            ] );
+            ?>
         </div>
-        <?php endif; ?>
-        <?php endif; ?>
-
-        <hr>
-        <h2><?php esc_html_e( 'Clear Log', 'otp-login' ); ?></h2>
-        <form method="post">
-            <?php wp_nonce_field( 'otp_login_clear_log' ); ?>
-            <?php submit_button( __( 'Clear all log entries', 'otp-login' ), 'delete', 'otp_login_clear_log', false ); ?>
-        </form>
     </div>
+    <?php endif; ?>
+    <?php endif; ?>
+
+    <hr>
+    <h2><?php esc_html_e( 'Clear Log', 'otp-login' ); ?></h2>
+    <form method="post">
+        <?php wp_nonce_field( 'otp_login_clear_log' ); ?>
+        <?php submit_button( __( 'Clear all log entries', 'otp-login' ), 'delete', 'otp_login_clear_log', false ); ?>
+    </form>
     <?php
 }

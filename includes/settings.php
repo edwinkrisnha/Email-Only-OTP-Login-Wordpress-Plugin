@@ -69,8 +69,8 @@ function otp_login_is_allowed_domain( $email ) {
 add_action( 'admin_menu', 'otp_login_admin_menu' );
 function otp_login_admin_menu() {
     add_options_page(
-        __( 'OTP Login Settings', 'otp-login' ),
-        __( 'OTP Login', 'otp-login' ),
+        __( 'Email Only OTP Login', 'otp-login' ),
+        __( 'Email Only OTP Login', 'otp-login' ),
         'manage_options',
         'otp-login',
         'otp_login_settings_page'
@@ -147,7 +147,7 @@ function otp_login_register_settings() {
         'otp_login_section_log',
         __( 'Login Log', 'otp-login' ),
         function () {
-            $log_url = admin_url( 'options-general.php?page=otp-login-log' );
+            $log_url = admin_url( 'options-general.php?page=otp-login&tab=log' );
             echo '<p>' . sprintf(
                 /* translators: %s: URL to log page */
                 wp_kses( __( 'Keep a record of all login events. <a href="%s">View Login Log &rarr;</a>', 'otp-login' ), [ 'a' => [ 'href' => [] ] ] ),
@@ -346,43 +346,63 @@ function otp_login_settings_page() {
     if ( ! current_user_can( 'manage_options' ) ) {
         return;
     }
+    $tab = isset( $_GET['tab'] ) ? sanitize_key( $_GET['tab'] ) : 'settings';
     ?>
     <div class="wrap">
-        <h1><?php esc_html_e( 'OTP Login Settings', 'otp-login' ); ?></h1>
+        <h1><?php esc_html_e( 'Email Only OTP Login', 'otp-login' ); ?></h1>
 
-        <?php settings_errors( 'otp_login_settings' ); ?>
+        <nav class="nav-tab-wrapper">
+            <a href="<?php echo esc_url( admin_url( 'options-general.php?page=otp-login' ) ); ?>"
+               class="nav-tab <?php echo $tab !== 'log' ? 'nav-tab-active' : ''; ?>">
+                <?php esc_html_e( 'Settings', 'otp-login' ); ?>
+            </a>
+            <a href="<?php echo esc_url( admin_url( 'options-general.php?page=otp-login&tab=log' ) ); ?>"
+               class="nav-tab <?php echo $tab === 'log' ? 'nav-tab-active' : ''; ?>">
+                <?php esc_html_e( 'Login Log', 'otp-login' ); ?>
+            </a>
+        </nav>
 
-        <form method="post" action="options.php">
-            <?php
-            settings_fields( 'otp_login_settings_group' );
-            do_settings_sections( 'otp-login' );
-            submit_button();
-            ?>
-        </form>
+        <?php if ( $tab === 'log' ) : ?>
 
-        <hr>
+            <?php otp_login_log_render_content(); ?>
 
-        <h2><?php esc_html_e( 'Send a Test OTP Email', 'otp-login' ); ?></h2>
-        <p><?php esc_html_e( 'Send a preview of the OTP email to verify your template and mail configuration.', 'otp-login' ); ?></p>
+        <?php else : ?>
 
-        <?php otp_login_handle_test_email(); ?>
+            <?php settings_errors( 'otp_login_settings' ); ?>
 
-        <form method="post">
-            <?php wp_nonce_field( 'otp_login_test_email', 'otp_login_test_nonce' ); ?>
-            <table class="form-table" role="presentation">
-                <tr>
-                    <th scope="row">
-                        <label for="otp_test_email"><?php esc_html_e( 'Recipient Email', 'otp-login' ); ?></label>
-                    </th>
-                    <td>
-                        <input type="email" id="otp_test_email" name="otp_test_email"
-                               value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>"
-                               class="regular-text" required />
-                    </td>
-                </tr>
-            </table>
-            <?php submit_button( __( 'Send Test Email', 'otp-login' ), 'secondary', 'otp_login_send_test' ); ?>
-        </form>
+            <form method="post" action="options.php">
+                <?php
+                settings_fields( 'otp_login_settings_group' );
+                do_settings_sections( 'otp-login' );
+                submit_button();
+                ?>
+            </form>
+
+            <hr>
+
+            <h2><?php esc_html_e( 'Send a Test OTP Email', 'otp-login' ); ?></h2>
+            <p><?php esc_html_e( 'Send a preview of the OTP email to verify your template and mail configuration.', 'otp-login' ); ?></p>
+
+            <?php otp_login_handle_test_email(); ?>
+
+            <form method="post">
+                <?php wp_nonce_field( 'otp_login_test_email', 'otp_login_test_nonce' ); ?>
+                <table class="form-table" role="presentation">
+                    <tr>
+                        <th scope="row">
+                            <label for="otp_test_email"><?php esc_html_e( 'Recipient Email', 'otp-login' ); ?></label>
+                        </th>
+                        <td>
+                            <input type="email" id="otp_test_email" name="otp_test_email"
+                                   value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>"
+                                   class="regular-text" required />
+                        </td>
+                    </tr>
+                </table>
+                <?php submit_button( __( 'Send Test Email', 'otp-login' ), 'secondary', 'otp_login_send_test' ); ?>
+            </form>
+
+        <?php endif; ?>
     </div>
     <?php
 }
@@ -435,7 +455,7 @@ add_filter( 'plugin_action_links_' . plugin_basename( OTP_LOGIN_PLUGIN_FILE ), '
 function otp_login_plugin_action_links( $links ) {
     $log_link = sprintf(
         '<a href="%s">%s</a>',
-        esc_url( admin_url( 'options-general.php?page=otp-login-log' ) ),
+        esc_url( admin_url( 'options-general.php?page=otp-login&tab=log' ) ),
         esc_html__( 'Log', 'otp-login' )
     );
     $settings_link = sprintf(
