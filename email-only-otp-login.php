@@ -6,8 +6,8 @@
  * Version:           1.7.0
  * Author:            Edwin Krisnha
  * Author URI:        https://github.com/edwinkrisnha
- * License:           GPLv2 or later
- * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * License:           GPLv3
+ * License URI:       https://www.gnu.org/licenses/gpl-3.0.html
  * Text Domain:       otp-login
  * Requires at least: 5.6
  * Requires PHP:      7.4
