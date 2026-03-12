@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] - 2026-03-12
+
+### Security
+- **Fix: IP spoofing bypassed rate limiting** — `otp_login_get_client_ip()` previously trusted `X-Forwarded-For` and `CF-Connecting-IP` headers unconditionally. Any client could rotate these values to bypass all IP-based rate limiting entirely. The function now defaults to `REMOTE_ADDR` (the real TCP connection IP, unforgeable). Proxy headers are only consulted when the new **Trust Proxy Headers** setting is explicitly enabled by the admin. (`includes/security.php`)
+- **Fix: OTP attempt counter race condition** — The previous read-increment-write pattern on the attempt counter transient allowed concurrent HTTP requests to each read `attempts=N` and write back `attempts=N+1`, effectively doubling the allowed brute-force attempts. The wrong-OTP path now uses `delete_transient()` as an atomic compare-and-delete — only the single caller that gets `true` back continues; all racing callers are rejected. (`includes/otp.php`)
+- **Fix: Magic link token consumed by email scanners** — Magic links were previously consumed on any `GET` request to the login URL, including those made by email security scanners (Microsoft Defender SafeLinks, Proofpoint, etc.) before the user clicks the link. The magic link flow is now two-phase: `GET` shows a confirmation page without touching the token; `POST` (triggered by the user clicking "Log In") verifies a nonce, then consumes the token and completes login. (`includes/otp.php`)
+
+### Added
+- **Trust Proxy Headers** setting — New checkbox in Settings → Security (default: unchecked). Must be enabled explicitly when the site sits behind a trusted reverse proxy or Cloudflare; explains the risk in the field description. (`includes/settings.php`)
+
 ## [1.7.1] - 2026-02-21
 
 ### Security

@@ -7,19 +7,32 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Return the best available client IP address.
+ *
+ * Uses REMOTE_ADDR (the actual TCP connection IP) by default, which cannot be
+ * spoofed by the client. Proxy headers (X-Forwarded-For, CF-Connecting-IP) are
+ * only consulted when the "Trust Proxy Headers" setting is explicitly enabled,
+ * because any client can set arbitrary HTTP headers and use them to bypass
+ * IP-based rate limiting.
  */
 function otp_login_get_client_ip() {
-    foreach ( [ 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' ] as $key ) {
-        if ( ! empty( $_SERVER[ $key ] ) ) {
-            $ip = sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) );
-            // X-Forwarded-For can be a comma-separated list; use the first entry.
-            if ( strpos( $ip, ',' ) !== false ) {
-                $ip = trim( explode( ',', $ip )[0] );
+    $s = otp_login_settings();
+
+    if ( ! empty( $s['trust_proxy_ip'] ) ) {
+        foreach ( [ 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR' ] as $key ) {
+            if ( ! empty( $_SERVER[ $key ] ) ) {
+                $ip = sanitize_text_field( wp_unslash( $_SERVER[ $key ] ) );
+                // X-Forwarded-For can be a comma-separated list; use the first entry.
+                if ( strpos( $ip, ',' ) !== false ) {
+                    $ip = trim( explode( ',', $ip )[0] );
+                }
+                return $ip;
             }
-            return $ip;
         }
     }
-    return '';
+
+    return ! empty( $_SERVER['REMOTE_ADDR'] )
+        ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) )
+        : '';
 }
 
 /**

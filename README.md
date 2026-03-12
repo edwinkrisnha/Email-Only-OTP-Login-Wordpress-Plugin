@@ -54,6 +54,7 @@ Navigate to **Settings → OTP Login** in the WordPress admin.
 | Max OTP Attempts | 3 | Wrong guesses allowed before the code is invalidated (1–10). |
 | Rate Limit | 5 requests | Max OTP requests per IP within the rate limit window (1–20). |
 | Rate Limit Window | 15 min | Time window for rate limiting (1–60 min). |
+| Trust Proxy Headers | Off | Enable **only** when the site sits behind a trusted reverse proxy or Cloudflare. When off (default), `REMOTE_ADDR` is used for rate limiting, which cannot be spoofed. Enabling without a real proxy allows attackers to bypass rate limits by sending arbitrary `X-Forwarded-For` / `CF-Connecting-IP` headers. |
 | Disable XML-RPC | On | Recommended — XML-RPC requires password auth and bypasses OTP. |
 
 ### Login Log
@@ -140,7 +141,7 @@ add_filter( 'otp_login_email_html', function ( $html, $user, $otp, $magic_url, $
 | Magic link only | User clicks a one-click URL in the email — no code entry needed. |
 | Both | Email contains both the code and the link; user can use either. |
 
-Magic links are single-use and expire after the same duration as OTP codes.
+Magic links are single-use and expire after the same duration as OTP codes. Clicking a magic link shows a confirmation page first; the token is only consumed when the user clicks the **Log In** button. This prevents email security scanners (Microsoft Defender SafeLinks, Proofpoint, etc.) from inadvertently consuming the token before the user sees it.
 
 ## File Structure
 
@@ -163,7 +164,9 @@ email-only-otp-login/
 
 - OTP codes are hashed with `wp_hash_password()` before storage.
 - Tokens are stored as WordPress transients and deleted immediately after use or expiry.
-- Magic links are single-use — the token is consumed on first click.
+- Magic links are two-phase: the token is only consumed when the user clicks **Log In** on the confirmation page, not on the initial GET request. This prevents email security scanners from consuming tokens before the user clicks.
+- OTP attempt counting uses an atomic delete-then-reissue pattern to prevent concurrent submissions from bypassing the max-attempts limit.
+- Rate limiting uses `REMOTE_ADDR` (the real connection IP) by default, which cannot be spoofed. Proxy header trust must be explicitly opt-in via the **Trust Proxy Headers** setting.
 - User enumeration is prevented — invalid usernames, blocked domains, and non-existent accounts all produce the same generic response.
 - Rate limiting counters are stored as transients, keyed by a hash of the client IP.
 - Resend cooldowns are enforced server-side per user, independent of the client-side countdown.

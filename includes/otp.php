@@ -262,6 +262,44 @@ function otp_login_handle_magic_action() {
         exit;
     }
 
+    // POST = user clicked the confirmation button on the preview page.
+    // Token is consumed here — the GET phase never touches it.
+    if ( 'POST' === $_SERVER['REQUEST_METHOD'] ) {
+        if (
+            ! isset( $_POST['otp_magic_confirm'] ) ||
+            ! wp_verify_nonce( wp_unslash( $_POST['_wpnonce'] ?? '' ), 'otp_magic_confirm_' . $token )
+        ) {
+            otp_login_render_username_form( __( 'Security check failed. Please request a new link.', 'otp-login' ) );
+            exit;
+        }
+
+        $data = get_transient( 'otp_magic_' . $token );
+
+        if ( ! $data || time() > (int) $data['expires'] ) {
+            delete_transient( 'otp_magic_' . $token );
+            otp_login_log_event( '', 'magic_expired' );
+            otp_login_render_username_form( __( 'This login link has expired. Please request a new one.', 'otp-login' ) );
+            exit;
+        }
+
+        // Consume the token — magic links are single-use.
+        delete_transient( 'otp_magic_' . $token );
+
+        $user_id  = (int) $data['user_id'];
+        $userdata = get_userdata( $user_id );
+        if ( ! $userdata ) {
+            otp_login_render_username_form( __( 'User not found. Please try again.', 'otp-login' ) );
+            exit;
+        }
+
+        otp_login_log_event( $userdata->user_email, 'magic_used', $user_id );
+        otp_login_complete_login( $user_id );
+        return; // otp_login_complete_login() exits, but be explicit.
+    }
+
+    // GET = show a confirmation page WITHOUT consuming the token.
+    // This prevents email security scanners and link-preview bots from
+    // inadvertently consuming the single-use token before the user clicks it.
     $data = get_transient( 'otp_magic_' . $token );
 
     if ( ! $data || time() > (int) $data['expires'] ) {
@@ -271,18 +309,7 @@ function otp_login_handle_magic_action() {
         exit;
     }
 
-    // Consume the token immediately — magic links are single-use.
-    delete_transient( 'otp_magic_' . $token );
-
-    $user_id  = (int) $data['user_id'];
-    $userdata = get_userdata( $user_id );
-    if ( ! $userdata ) {
-        otp_login_render_username_form( __( 'User not found. Please try again.', 'otp-login' ) );
-        exit;
-    }
-
-    otp_login_log_event( $userdata->user_email, 'magic_used', $user_id );
-    otp_login_complete_login( $user_id );
+    otp_login_render_magic_confirm_form( $token );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -312,7 +339,7 @@ function otp_login_validate_otp( $token, $submitted_otp ) {
     $max  = (int) $s['otp_max_attempts'];
     $data = get_transient( 'otp_login_' . $token );
 
-    if ( ! $data || time() > $data['expires'] ) {
+    if ( ! $data || time() > (int) $data['expires'] ) {
         delete_transient( 'otp_login_' . $token );
         return new WP_Error( 'otp_expired', __( 'OTP has expired. Please request a new one.', 'otp-login' ) );
     }
@@ -324,30 +351,38 @@ function otp_login_validate_otp( $token, $submitted_otp ) {
         return new WP_Error( 'otp_max_attempts', __( 'Too many incorrect attempts. Please request a new code.', 'otp-login' ) );
     }
 
-    if ( ! wp_check_password( $submitted_otp, $data['otp'] ) ) {
-        $data['attempts'] = $attempts + 1;
-
-        if ( $data['attempts'] >= $max ) {
-            delete_transient( 'otp_login_' . $token );
-            return new WP_Error( 'otp_max_attempts', __( 'Too many incorrect attempts. Please request a new code.', 'otp-login' ) );
-        }
-
-        // Persist updated attempt count, preserving the remaining TTL.
-        $remaining_ttl = max( 1, $data['expires'] - time() );
-        set_transient( 'otp_login_' . $token, $data, $remaining_ttl );
-
-        $remaining = $max - $data['attempts'];
-        return new WP_Error(
-            'otp_invalid',
-            sprintf(
-                _n( 'Invalid code. %d attempt remaining.', 'Invalid code. %d attempts remaining.', $remaining, 'otp-login' ),
-                $remaining
-            )
-        );
+    if ( wp_check_password( $submitted_otp, $data['otp'] ) ) {
+        delete_transient( 'otp_login_' . $token );
+        return (int) $data['user_id'];
     }
 
-    delete_transient( 'otp_login_' . $token );
-    return (int) $data['user_id'];
+    // Wrong OTP — atomically consume the transient and re-issue with an incremented
+    // attempt count. delete_transient() returns true for exactly one caller when
+    // concurrent requests race (the DB/cache layer guarantees one winner). Any losing
+    // concurrent caller is rejected, preventing them from each reading attempts=N and
+    // all writing back attempts=N+1 (which would effectively double the allowed guesses).
+    if ( ! delete_transient( 'otp_login_' . $token ) ) {
+        return new WP_Error( 'otp_expired', __( 'OTP has expired. Please request a new one.', 'otp-login' ) );
+    }
+
+    $data['attempts'] = $attempts + 1;
+
+    if ( $data['attempts'] >= $max ) {
+        return new WP_Error( 'otp_max_attempts', __( 'Too many incorrect attempts. Please request a new code.', 'otp-login' ) );
+    }
+
+    // Re-store with the incremented count, preserving the remaining TTL.
+    $remaining_ttl = max( 1, (int) $data['expires'] - time() );
+    set_transient( 'otp_login_' . $token, $data, $remaining_ttl );
+
+    $remaining = $max - $data['attempts'];
+    return new WP_Error(
+        'otp_invalid',
+        sprintf(
+            _n( 'Invalid code. %d attempt remaining.', 'Invalid code. %d attempts remaining.', $remaining, 'otp-login' ),
+            $remaining
+        )
+    );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -593,6 +628,39 @@ function otp_login_render_otp_sent_message( $method = 'otp' ) {
     ?>
     <p class="message"><?php echo esc_html( $msg ); ?></p>
     <p style="text-align:center;">
+        <a href="<?php echo esc_url( wp_login_url() ); ?>">
+            &larr; <?php esc_html_e( 'Back to login', 'otp-login' ); ?>
+        </a>
+    </p>
+    <?php
+    login_footer();
+    exit;
+}
+
+function otp_login_render_magic_confirm_form( $token ) {
+    $site_name = get_bloginfo( 'name' );
+    $action    = esc_url( add_query_arg( [ 'action' => 'otp_magic', 'token' => $token ], wp_login_url() ) );
+
+    login_header( __( 'Confirm Login', 'otp-login' ) );
+    ?>
+    <p class="message">
+        <?php
+        printf(
+            /* translators: %s: site name */
+            esc_html__( 'You are about to log in to %s. Click the button below to continue.', 'otp-login' ),
+            esc_html( $site_name )
+        );
+        ?>
+    </p>
+    <form method="post" action="<?php echo $action; // Already esc_url'd above. ?>">
+        <?php wp_nonce_field( 'otp_magic_confirm_' . $token ); ?>
+        <input type="hidden" name="otp_magic_confirm" value="1" />
+        <p class="submit">
+            <input type="submit" class="button button-primary button-large"
+                   value="<?php esc_attr_e( 'Log In', 'otp-login' ); ?>" />
+        </p>
+    </form>
+    <p style="text-align:center; margin-top:1em;">
         <a href="<?php echo esc_url( wp_login_url() ); ?>">
             &larr; <?php esc_html_e( 'Back to login', 'otp-login' ); ?>
         </a>

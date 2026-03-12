@@ -20,6 +20,7 @@ function otp_login_settings() {
         'otp_max_attempts'    => 3,
         'otp_rate_limit'      => 5,
         'otp_rate_window'     => 15,
+        'trust_proxy_ip'          => 0,
         'disable_xmlrpc'          => 1,
         'otp_log_retention_days'  => 30,
         'email_subject'           => '[{site_name}] Your one-time login code',
@@ -108,6 +109,7 @@ function otp_login_register_settings() {
     add_settings_field( 'otp_max_attempts', __( 'Max OTP Attempts', 'otp-login' ),           'otp_login_field_max_attempts',   'otp-login', 'otp_login_section_security' );
     add_settings_field( 'otp_rate_limit',   __( 'Rate Limit (requests)', 'otp-login' ),       'otp_login_field_rate_limit',     'otp-login', 'otp_login_section_security' );
     add_settings_field( 'otp_rate_window',  __( 'Rate Limit Window (minutes)', 'otp-login' ), 'otp_login_field_rate_window',    'otp-login', 'otp_login_section_security' );
+    add_settings_field( 'trust_proxy_ip',   __( 'Trust Proxy Headers', 'otp-login' ),         'otp_login_field_trust_proxy_ip', 'otp-login', 'otp_login_section_security' );
     add_settings_field( 'disable_xmlrpc',   __( 'Disable XML-RPC', 'otp-login' ),             'otp_login_field_disable_xmlrpc', 'otp-login', 'otp_login_section_security' );
 
     // ── Section: Domain Allow-list ────────────────────────────
@@ -172,6 +174,7 @@ function otp_login_sanitize_settings( $input ) {
     $clean['otp_max_attempts']    = min( 10, max( 1, (int) ( $input['otp_max_attempts'] ?? 3 ) ) );
     $clean['otp_rate_limit']      = min( 20, max( 1, (int) ( $input['otp_rate_limit'] ?? 5 ) ) );
     $clean['otp_rate_window']     = min( 60, max( 1, (int) ( $input['otp_rate_window'] ?? 15 ) ) );
+    $clean['trust_proxy_ip']         = empty( $input['trust_proxy_ip'] ) ? 0 : 1;
     $clean['disable_xmlrpc']         = empty( $input['disable_xmlrpc'] ) ? 0 : 1;
     $clean['otp_resend_cooldown']    = min( 300, max( 30, (int) ( $input['otp_resend_cooldown'] ?? 60 ) ) );
     $clean['otp_log_retention_days'] = min( 365, max( 1, (int) ( $input['otp_log_retention_days'] ?? 30 ) ) );
@@ -293,6 +296,16 @@ function otp_login_field_rate_window() {
         '<input type="number" name="otp_login_settings[otp_rate_window]" value="%d" min="1" max="60" class="small-text" /><p class="description">%s</p>',
         (int) $s['otp_rate_window'],
         esc_html__( 'Time window in minutes for the rate limit (1–60).', 'otp-login' )
+    );
+}
+
+function otp_login_field_trust_proxy_ip() {
+    $s = otp_login_settings();
+    printf(
+        '<label><input type="checkbox" name="otp_login_settings[trust_proxy_ip]" value="1" %s /> %s</label><p class="description">%s</p>',
+        checked( 1, (int) $s['trust_proxy_ip'], false ),
+        esc_html__( 'Trust X-Forwarded-For and CF-Connecting-IP headers', 'otp-login' ),
+        esc_html__( 'Enable only when your site sits behind a trusted reverse proxy or Cloudflare. When disabled (default), the real connection IP (REMOTE_ADDR) is used for rate limiting — this is safe from spoofing. Enabling this without a trusted proxy allows attackers to bypass rate limits by sending arbitrary header values.', 'otp-login' )
     );
 }
 
